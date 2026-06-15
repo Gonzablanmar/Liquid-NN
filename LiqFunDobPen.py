@@ -69,3 +69,32 @@ def mse_loss(y_pred, y_true):
 # LOSS GRADIENT
 def mse_grad(y_pred, y_true):
     return 2 * (y_pred - y_true)/ y_pred.size 
+
+#SIMULATION
+def simulate(net, x0, steps, dt=0.01):
+
+    net.reset()
+
+    x = x0.copy()
+
+    trajectory = [x.copy()]
+
+    for _ in range(steps):
+
+        # predicción de aceleraciones
+        alpha = net.step(x)
+
+        # separar variables
+        theta = x[:2]
+        omega = x[2:]
+
+        # integrar
+        omega = omega + dt * alpha
+        theta = theta + dt * omega
+
+        # nuevo estado
+        x = np.concatenate([theta, omega])
+
+        trajectory.append(x.copy())
+
+    return np.array(trajectory)
