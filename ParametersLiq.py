@@ -1,9 +1,9 @@
 import numpy
 
-hidden_size = 50
+hidden_size = 32
 seq_len = 100
 initial_lr = 4e-4
-epochs = 50
+epochs = 80
 # ===== PARÁMETROS ADAM =====
 beta1 = 0.9
 beta2 = 0.999

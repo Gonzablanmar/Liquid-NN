@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn 
+import ParametersLiq as lp
 
 # LIQUID NEURON
 class LiquidNeuron:
@@ -13,41 +14,60 @@ class LiquidNeuron:
 
 # LIQUID NETWORK
 class LiquidNetwork:
+
     def __init__(self, input_size, hidden_size, output_size):
 
-        self.hidden_size = hidden_size # Save  dynamic size
+        self.hidden_size = hidden_size
         self.input_size = input_size
         self.output_size = output_size
 
-        self.neuron = LiquidNeuron(input_size) # Auxiliar neuron
-        self.tau = np.random.uniform(0.85, 2.0, size=hidden_size) # Time constants; (tau1, tau2,..., taun)
-
-        # Input weights
+        # Pesos principales
         self.W_in = np.random.randn(hidden_size, input_size) * 0.1
-        # Recurrent weights
-        self.W_rec = np.random.randn(hidden_size, hidden_size) * 0.1
-        #Bias, displacement
+        
+        # Recurrente ortogonal 🔥
+        Q, _ = np.linalg.qr(np.random.randn(hidden_size, hidden_size))
+        self.W_rec = Q
+
         self.bias = np.zeros(hidden_size)
-        # x(t)
+
+        # Estado
         self.state = np.zeros(hidden_size)
-        # Output; Turns state into an output
+
+        # Output
         self.W_out = np.random.randn(output_size, hidden_size) * 0.1
-        # Output bias
         self.bias_out = np.zeros(output_size)
 
-    def step(self, input_signal, dt=0.01): # Computation of the dynamics
+        # Tau dinámico ✅
+        self.W_tau_in = np.random.randn(hidden_size, input_size) * 0.05
+        self.W_tau_rec = np.random.randn(hidden_size, hidden_size) * 0.05
+        self.b_tau = np.zeros(hidden_size)
+        self.W_skip = np.random.randn(output_size, input_size) * 0.1
 
-        dx = (-self.state + self.neuron.activation(
-            self.W_in @ input_signal +
-            self.W_rec @ self.state +             # Final dynamics, dx/dt= -x + tanh(...)
-            self.bias
-        )) / (self.tau + 1e-6)
-        
 
-        self.state += dt * dx  # Euler
+    def activation(self, z):
+        return np.tanh(z) + 0.3 * np.sin(z)
 
-        return self.W_out @ self.state + self.bias_out # Linear projection; y = Wout*x + b
-    
+    def step(self, input_signal, dt=0.01):
+
+        # tau dinámico
+        tau = np.exp(
+            self.W_tau_in @ input_signal +
+            self.W_tau_rec @ self.state +
+            self.b_tau
+        )
+
+        z = self.W_in @ input_signal + self.W_rec @ self.state + self.bias
+
+        dh_dt = (-self.state + self.activation(z)) / (tau + 1e-6)
+
+        # estabilidad
+        dh_dt = np.clip(dh_dt, -5, 5)
+
+        self.state += dt * dh_dt
+
+        # skip connection ✅
+        return self.W_out @ self.state + self.bias_out + self.W_skip @ input_signal
+
     def reset(self):
         self.state = np.zeros(self.hidden_size)
 
@@ -98,3 +118,44 @@ def simulate(net, x0, steps, dt=0.01):
         trajectory.append(x.copy())
 
     return np.array(trajectory)
+
+def rk4_step(net, x, dt):
+
+    state_backup = net.state.copy()
+
+    def f(x_local):
+        return np.concatenate([
+            x_local[2:],           # omega
+            net.step(x_local)      # alpha
+        ])
+
+    k1 = f(x)
+    net.state = state_backup.copy()
+
+    k2 = f(x + 0.5 * dt * k1)
+    net.state = state_backup.copy()
+
+    k3 = f(x + 0.5 * dt * k2)
+    net.state = state_backup.copy()
+
+    k4 = f(x + dt * k3)
+    net.state = state_backup.copy()
+
+    x_next = x + (dt / 6.0) * (k1 + 2*k2 + 2*k3 + k4)
+
+    return x_next
+
+def adam_update(param, grad, m, v, t_adam, lr):
+    m = lp.beta1 * m + (1 - lp.beta1) * grad
+    v = lp.beta2 * v + (1 - lp.beta2) * (grad**2)
+    m_hat = m / (1 - lp.beta1**t_adam)
+    v_hat = v / (1 - lp.beta2**t_adam)
+    param -= lr * m_hat / (np.sqrt(v_hat) + lp.eps)
+    return m, v
+
+def energy(x):
+    theta1, theta2, omega1, omega2 = x
+
+    # simplificado (vale para empezar)
+    return 0.5 * (omega1**2 + omega2**2) + \
+           0.5 * (theta1**2 + theta2**2)
