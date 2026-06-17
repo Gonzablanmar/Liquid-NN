@@ -26,7 +26,7 @@ class LiquidNetwork:
         
         # Recurrente ortogonal 🔥
         Q, _ = np.linalg.qr(np.random.randn(hidden_size, hidden_size))
-        self.W_rec = Q
+        self.W_rec = 0.95 * Q
 
         self.bias = np.zeros(hidden_size)
 
@@ -39,22 +39,23 @@ class LiquidNetwork:
 
         # Tau dinámico ✅
         self.W_tau_in = np.random.randn(hidden_size, input_size) * 0.05
-        self.W_tau_rec = np.random.randn(hidden_size, hidden_size) * 0.05
+        self.W_tau_rec = np.random.randn(hidden_size, hidden_size) * 0.02
         self.b_tau = np.zeros(hidden_size)
         self.W_skip = np.random.randn(output_size, input_size) * 0.1
 
 
     def activation(self, z):
-        return np.tanh(z) + 0.3 * np.sin(z)
+        return np.tanh(z) + 0.2 * np.sin(z)
 
     def step(self, input_signal, dt=0.01):
 
-        # tau dinámico
+        # Tau(constant) but changes over time(liquid)
         tau = np.exp(
             self.W_tau_in @ input_signal +
             self.W_tau_rec @ self.state +
             self.b_tau
         )
+        tau = np.clip(tau, 0.1, 2.0)
 
         z = self.W_in @ input_signal + self.W_rec @ self.state + self.bias
 
@@ -64,9 +65,10 @@ class LiquidNetwork:
         dh_dt = np.clip(dh_dt, -5, 5)
 
         self.state += dt * dh_dt
+        self.state = np.clip(self.state, -2.0, 2.0)
 
         # skip connection ✅
-        return self.W_out @ self.state + self.bias_out + self.W_skip @ input_signal
+        return (self.W_out @ self.state + self.bias_out + self.W_skip @ input_signal) * 0.5
 
     def reset(self):
         self.state = np.zeros(self.hidden_size)
@@ -159,3 +161,12 @@ def energy(x):
     # simplificado (vale para empezar)
     return 0.5 * (omega1**2 + omega2**2) + \
            0.5 * (theta1**2 + theta2**2)
+
+def real_energy(x):
+    theta1, theta2, omega1, omega2 = x
+    
+    return (
+        0.5 * (omega1**2 + omega2**2)
+        + (1 - np.cos(theta1))
+        + (1 - np.cos(theta2))
+    )
