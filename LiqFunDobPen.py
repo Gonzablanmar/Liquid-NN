@@ -57,7 +57,7 @@ class LiquidNetwork:
         )
         tau = np.clip(tau, 0.1, 2.0)
 
-        z = self.W_in @ input_signal + self.W_rec @ self.state + self.bias
+        z = self.W_in @ input_signal + 0.8 * self.W_rec @ self.state + self.bias
 
         dh_dt = (-self.state + self.activation(z)) / (tau + 1e-6)
 
