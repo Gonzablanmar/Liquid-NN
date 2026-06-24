@@ -21,32 +21,33 @@ class LiquidNetwork:
         self.input_size = input_size
         self.output_size = output_size
 
-        # Pesos principales
+        # Weights
+        # Entrance weights
         self.W_in = np.random.randn(hidden_size, input_size) * 0.1
         
-        # Recurrente ortogonal 🔥
+        # Ortogonal recurrent; In order to not have the gradient exploding or disappearing, controls how memmory flows over time
         Q, _ = np.linalg.qr(np.random.randn(hidden_size, hidden_size))
         self.W_rec = 0.95 * Q
 
         self.bias = np.zeros(hidden_size)
 
-        # Estado
+        # Inner state weight
         self.state = np.zeros(hidden_size)
 
-        # Output
+        # Output weight
         self.W_out = np.random.randn(output_size, hidden_size) * 0.1
         self.bias_out = np.zeros(output_size)
 
-        # Tau dinámico ✅
+        # Dynamic tau
         self.W_tau_in = np.random.randn(hidden_size, input_size) * 0.05
         self.W_tau_rec = np.random.randn(hidden_size, hidden_size) * 0.02
         self.b_tau = np.zeros(hidden_size)
         self.W_skip = np.random.randn(output_size, input_size) * 0.1
 
-
+    # Activation function
     def activation(self, z):
         return np.tanh(z) + 0.2 * np.sin(z)
-
+    # Systems's dynamic
     def step(self, input_signal, dt=0.01):
 
         # Tau(constant) but changes over time(liquid)
@@ -56,19 +57,23 @@ class LiquidNetwork:
             self.b_tau
         )
         tau = np.clip(tau, 0.1, 2.0)
-
-        z = self.W_in @ input_signal + 0.8 * self.W_rec @ self.state + self.bias
-
+        # z mixture of actual state and memmory
+        z = self.W_in @ input_signal + 0.6 * self.W_rec @ self.state + self.bias
+        # Differential equation
         dh_dt = (-self.state + self.activation(z)) / (tau + 1e-6)
 
-        # estabilidad
+        # Clip for stability
         dh_dt = np.clip(dh_dt, -5, 5)
-
+        
+        #Tempòral integration
         self.state += dt * dh_dt
-        self.state = np.clip(self.state, -2.0, 2.0)
+        # Cliping of the state ( could kill oscilations)
+        self.state = np.clip(self.state, -4.0, 4.0)
 
-        # skip connection ✅
-        return (self.W_out @ self.state + self.bias_out + self.W_skip @ input_signal) * 0.5
+        # Output (alpha)
+        alpha = 0.8 * (self.W_out @ self.state + self.bias_out) + 0.3 * self.W_skip @ input_signal
+        alpha = np.clip(alpha, -10, 10)
+        return alpha
 
     def reset(self):
         self.state = np.zeros(self.hidden_size)
@@ -95,7 +100,7 @@ def mse_grad(y_pred, y_true):
 #SIMULATION
 def simulate(net, x0, steps, dt=0.01):
 
-    net.reset()
+    net.reset() # Sets the inner state to 0
 
     x = x0.copy()
 
@@ -148,11 +153,11 @@ def rk4_step(net, x, dt):
     return x_next
 
 def adam_update(param, grad, m, v, t_adam, lr):
-    m = lp.beta1 * m + (1 - lp.beta1) * grad
-    v = lp.beta2 * v + (1 - lp.beta2) * (grad**2)
+    m = lp.beta1 * m + (1 - lp.beta1) * grad # Soft mean of past gradients
+    v = lp.beta2 * v + (1 - lp.beta2) * (grad**2) # Variance, gradient mean squared
     m_hat = m / (1 - lp.beta1**t_adam)
     v_hat = v / (1 - lp.beta2**t_adam)
-    param -= lr * m_hat / (np.sqrt(v_hat) + lp.eps)
+    param -= lr * m_hat / (np.sqrt(v_hat) + lp.eps) #Actualization
     return m, v
 
 def energy(x):
